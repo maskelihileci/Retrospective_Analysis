@@ -10,7 +10,11 @@ The analysis integrates seamlessly into your workflow, starting directly from th
 
 ![RA2](https://github.com/user-attachments/assets/35d77173-c305-4adf-9f19-aa7cc99bd20b)
 
-Features
+
+![image](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879)
+
+
+
 🔍 Function Call Layer Analysis
 The analysis begins from the selected function and iteratively scans the call hierarchy up to a user-defined depth (1-10 layers). Each layer represents a group of function calls, enabling a detailed examination of call relationships.
 
