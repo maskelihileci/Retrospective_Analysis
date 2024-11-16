@@ -1,5 +1,3 @@
-
-README.md (English)
 Retrospective Analysis Plugin for IDA Pro
 Retrospective Analysis is a plugin for IDA Pro, designed to enhance the reverse engineering process. By analyzing function call chains and optimizing parameter usage, this plugin provides invaluable insights for reverse engineers seeking to streamline their analysis workflow.
 
