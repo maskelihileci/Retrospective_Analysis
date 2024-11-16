@@ -19,6 +19,7 @@ The analysis integrates seamlessly into your workflow, starting directly from th
 
 
 
+
 ### Features  
 
 #### 🔍 Function Call Layer Analysis  
@@ -43,7 +44,7 @@ Automatically refreshes the decompiled view after making changes.
 1. **Select a Function**  
    Open the **decompiled view** in IDA Pro and right-click the function you want to analyze.  
 
-   ![Context Menu](![image](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879))  
+   ![Context Menu]([image.png](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879))  
 
 2. **Start the Analysis**  
    Select **Retrospective Analysis** from the context menu.  
