@@ -3,6 +3,11 @@ Retrospective Analysis is a plugin compatible with IDA Pro that enhances the rev
 
 The analysis integrates seamlessly into your workflow, starting directly from the context menu of the decompiled view.
 
+
+![image](https://github.com/user-attachments/assets/dc2ed490-80d5-4c9c-9b4f-6538298f5b20)
+
+
+
 Features
 🔍 Function Call Layer Analysis
 The analysis begins from the selected function and iteratively scans the call hierarchy up to a user-defined depth (1-10 layers). Each layer represents a group of function calls, enabling a detailed examination of call relationships.
