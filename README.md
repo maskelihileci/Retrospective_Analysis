@@ -4,7 +4,7 @@ Retrospective Analysis is a plugin compatible with IDA Pro that enhances the rev
 The analysis integrates seamlessly into your workflow, starting directly from the context menu of the decompiled view.
 
 
-![image](https://github.com/user-attachments/assets/dc2ed490-80d5-4c9c-9b4f-6538298f5b20)
+![image](https://github.com/user-attachments/assets/9c739246-1e4f-4664-909f-4ddcd9273326)
 
 
 
