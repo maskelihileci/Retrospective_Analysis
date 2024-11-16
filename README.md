@@ -1,22 +1,3 @@
-Retrospective Analysis IDA Pro Plugin
-Retrospective Analysis is a plugin compatible with IDA Pro that enhances the reverse engineering process. It performs backward analysis of function calls using a layered system, predicts and modifies function types, and removes unused parameters after these modifications. This process aims to accelerate and simplify the analysis workflow for reverse engineers.
-
-The analysis integrates seamlessly into your workflow, starting directly from the context menu of the decompiled view.
-
-
-
-![RA1](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
-
-
-![RA2](https://github.com/user-attachments/assets/35d77173-c305-4adf-9f19-aa7cc99bd20b)
-
-
-![image](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879)
-
-
-
-
-
 ---
 
 # Retrospective Analysis IDA Pro Plugin  
@@ -26,6 +7,17 @@ The analysis integrates seamlessly into your workflow, starting directly from th
 The analysis integrates seamlessly into your workflow, starting directly from the **context menu of the decompiled view**.  
 
 ---
+
+
+
+![RA1](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
+
+
+![RA2](https://github.com/user-attachments/assets/35d77173-c305-4adf-9f19-aa7cc99bd20b)
+
+
+
+
 
 ### Features  
 
@@ -51,7 +43,7 @@ Automatically refreshes the decompiled view after making changes.
 1. **Select a Function**  
    Open the **decompiled view** in IDA Pro and right-click the function you want to analyze.  
 
-   ![Context Menu](image.png)  
+   ![Context Menu](![image](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879))  
 
 2. **Start the Analysis**  
    Select **Retrospective Analysis** from the context menu.  
