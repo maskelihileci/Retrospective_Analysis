@@ -1,3 +1,8 @@
+
+
+
+###
+
 ---
 
 # Retrospective Analysis IDA Pro Plugin  
@@ -7,13 +12,6 @@
 The analysis integrates seamlessly into your workflow, starting directly from the **context menu of the decompiled view**.  
 
 ---
-
-
-
-![RA1](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
-
-
-![RA2](https://github.com/user-attachments/assets/35d77173-c305-4adf-9f19-aa7cc99bd20b)
 
 
 
@@ -44,15 +42,17 @@ Automatically refreshes the decompiled view after making changes.
 1. **Select a Function**  
    Open the **decompiled view** in IDA Pro and right-click the function you want to analyze.  
 
-   ![Context Menu]([image.png](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879))  
-
 2. **Start the Analysis**  
-   Select **Retrospective Analysis** from the context menu.  
+   Select **Retrospective Analysis** from the context menu.
+
+   ![Context Menu](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
 
 3. **Optionally Configure Analysis Settings**  
-   Adjust the analysis depth (1-10 layers) and start the analysis.  
+   Adjust the analysis depth (1-10 layers) and start the analysis.
 
-4. **Review the Results**  
+   ![Settings Menu](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879)
+
+5. **Review the Results**  
    The plugin modifies call types and cleans up unused parameters. Review these changes in the **decompiled view**.  
 
 ---
@@ -60,7 +60,9 @@ Automatically refreshes the decompiled view after making changes.
 ### Known Limitations  
 
 1. **Virtual Call Handling**  
-   Virtual calls must currently be adjusted manually.  
+   Virtual calls must currently be adjusted manually.
+
+   ![RA2](https://github.com/user-attachments/assets/35d77173-c305-4adf-9f19-aa7cc99bd20b)
 
 2. **Return Type Analysis**  
    Planned for future releases.  
