@@ -177,6 +177,33 @@ def show_config_dialog():
               pass
 
 
+def first_config(self):
+    try:
+            self.config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
+            
+            # Define default config
+            self.default_config = {
+                "max_layers": 4,
+                "auto_refresh_views": True,
+                "show_debug": False,
+                "param_analysis": True,
+                "func_type_analysis": True
+            }
+            
+            # Check if config file exists, if not create it with default values
+            if not os.path.exists(self.config_path):
+                try:
+                    with open(self.config_path, 'w') as f:
+                        json.dump(self.default_config, f, indent=4)
+                    print(f"Created default config file at: {self.config_path}")
+                except Exception as e:
+                    print(f"Error creating default config file: {str(e)}")
+
+    except Exception as e:
+        print(f"Error in first_config: {str(e)}")  
+
+
+
 class CallingConventionFixer:
     def __init__(self):
         self.processed_funcs = set()
@@ -1043,6 +1070,7 @@ class BackwardsDecompilerPlugin(idaapi.plugin_t):
         # Setup hooks
         self.hooks = BackwardsDecompilerHooks()
         self.hooks.hook()
+        first_config(self)
 
         print("Retrospective analysis plugin initialized successfully")
         return idaapi.PLUGIN_KEEP
