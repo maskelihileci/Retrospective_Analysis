@@ -1,55 +1,55 @@
-Retrospective Analysis Plugin for IDA Pro
-Retrospective Analysis is a plugin for IDA Pro, designed to enhance the reverse engineering process. By analyzing function call chains and optimizing parameter usage, this plugin provides invaluable insights for reverse engineers seeking to streamline their analysis workflow.
+Retrospective Analysis IDA Pro Plugin
+Retrospective Analysis is a plugin compatible with IDA Pro that enhances the reverse engineering process. It performs backward analysis of function calls using a layered system, predicts and modifies function types, and removes unused parameters after these modifications. This process aims to accelerate and simplify the analysis workflow for reverse engineers.
 
-The analysis can be initiated directly from the decompiled view's context menu, offering seamless integration with your existing workflow.
+The analysis integrates seamlessly into your workflow, starting directly from the context menu of the decompiled view.
 
 Features
 🔍 Function Call Layer Analysis
-The analysis starts from the selected function and iteratively traverses its call hierarchy for a user-specified depth (1-10 layers). Each layer represents a set of function calls, enabling detailed inspection of call relationships.
+The analysis begins from the selected function and iteratively scans the call hierarchy up to a user-defined depth (1-10 layers). Each layer represents a group of function calls, enabling a detailed examination of call relationships.
 
 🛠️ Parameter Optimization
-Analyzes function call types (e.g., __thiscall, __stdcall) and identifies unused parameters only after modifying the function type. It then suggests the removal of those parameters.
+Analyzes function call types (e.g., __thiscall, __stdcall), modifies them, and removes unused parameters afterward.
 
 ⚙️ Function Call Type Analysis
-Analyzes function call types and detects inconsistencies or common patterns to improve the function’s signature.
+Analyzes function call types, identifies inconsistencies or common patterns, and improves the function signature.
 
-🖥️ Seamless Integration
-Launch analysis directly from the decompiled view’s context menu (as shown in the screenshot).
+🖥️ Easy Integration
+Start the analysis directly from the context menu in the decompiled view (as shown in the image).
 
-🔄 Auto Refresh
-Automatically updates decompiler views after changes.
+🔄 Automatic Refresh
+Automatically refreshes the decompiled view after making changes.
 
-How to Use
+How to Use?
 Select a Function
-Open the decompiled view in IDA Pro and right-click on the function you want to analyze.
+Open the decompiled view in IDA Pro and right-click the function you want to analyze.
 
 
-Start Analysis
-From the context menu, select Retrospective Analysis.
+Start the Analysis
+Select Retrospective Analysis from the context menu.
 
-Configure Analysis
+Optionally Configure Analysis Settings
 Adjust the analysis depth (1-10 layers) and start the analysis.
 
-Review Results
-The plugin highlights unused parameters and call type inconsistencies. Review these in the console or decompiled view.
+Review the Results
+The plugin modifies call types and cleans up unused parameters. Review these changes in the decompiled view.
 
 Known Limitations
 Virtual Call Handling
-Virtual calls must be manually adjusted for now.
+Virtual calls must currently be adjusted manually.
 
 Return Type Analysis
 Planned for future releases.
 
 Accuracy
-While the analysis achieves ~80% accuracy in identifying unused parameters, manual review is recommended.
+While the analysis achieves a high accuracy rate in identifying call types and unused parameters, incorrect results may still occur. Manual review is recommended.
 
 Installation
 Download the latest release from GitHub Releases.
 Place the plugin file in the plugins directory of your IDA Pro installation.
 Restart IDA Pro. The plugin will appear in the context menu of the decompiled view.
 Future Improvements
-Automating virtual call type corrections (This must currently be done manually because I haven’t yet identified which library or function can be used to modify these virtual call types).
+Automating virtual call type corrections (For now, this must be done manually because I have yet to determine which library function to call to modify the types of these virtual calls).
 Adding return type analysis functionality.
 Contribute
-Contributions are welcome! Fork the repository and submit a pull request to help improve the plugin. Feedback and suggestions, especially regarding virtual call automation and return type analysis, are highly appreciated.
+We welcome your contributions! Fork the repository, submit a pull request, and help improve the plugin. Feedback and suggestions, especially for automating virtual call handling and return type analysis, are highly valued.
 
