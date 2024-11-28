@@ -48,12 +48,12 @@ Automatically refreshes the decompiled view after making changes.
 2. **Start the Analysis**  
    Select **Retrospective Analysis** from the context menu.
 
-   ![Context Menu](https://github.com/user-attachments/assets/e921a7b6-2550-4673-bd28-5305ae40924d)
+   ![Context Menu](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
 
 4. **Optionally Configure Analysis Settings**  
    Adjust the analysis depth (1-10 layers) and start the analysis.
 
-   ![Settings Menu](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879)
+   ![Settings Menu](https://github.com/user-attachments/assets/e921a7b6-2550-4673-bd28-5305ae40924d)
 
 5. **Review the Results**  
    The plugin modifies call types and cleans up unused parameters. Review these changes in the **decompiled view**.  
