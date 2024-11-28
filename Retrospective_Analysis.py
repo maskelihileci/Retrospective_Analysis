@@ -9,6 +9,7 @@ import ida_bytes
 import os
 import ida_diskio
 import json
+import ida_xref
 
 
 # Debug Logger sınıfı
@@ -68,9 +69,10 @@ class ConfigDialog(ida_kernwin.Form):
               Analysis Options:
               <##Enable parameter analysis:{param_analysis}>{cGroup1}>
               <##Enable function type analysis:{func_type_analysis}>{cGroup2}>
+              <##Enable unused parameter analysis in call references:{unused_param_analysis}>{cGroup3}>
               
               Debug Options:
-              <##Show debug messages:{show_debug}>{cGroup3}>
+              <##Show debug messages:{show_debug}>{cGroup4}>
               
               View Options:
               <##Auto refresh decompiler views:{auto_refresh_views}>{cGroup5}>
@@ -78,7 +80,8 @@ class ConfigDialog(ida_kernwin.Form):
                   'max_layers': Form.NumericInput(tp=Form.FT_DEC, value=self.config["max_layers"], swidth=5),
                   'cGroup1': Form.ChkGroupControl(("param_analysis",), value=1 if self.config["param_analysis"] else 0),
                   'cGroup2': Form.ChkGroupControl(("func_type_analysis",), value=1 if self.config["func_type_analysis"] else 0),
-                  'cGroup3': Form.ChkGroupControl(("show_debug",), value=1 if self.config["show_debug"] else 0),
+                  'cGroup3': Form.ChkGroupControl(("unused_param_analysis",), value=1 if self.config["unused_param_analysis"] else 0),
+                  'cGroup4': Form.ChkGroupControl(("show_debug",), value=1 if self.config["show_debug"] else 0),
                   'cGroup5': Form.ChkGroupControl(("auto_refresh_views",), value=1 if self.config["auto_refresh_views"] else 0)
               })
           
@@ -107,7 +110,8 @@ class ConfigDialog(ida_kernwin.Form):
           "auto_refresh_views": True,
           "show_debug": False,
           "param_analysis": True,
-          "func_type_analysis": True
+          "func_type_analysis": True,
+          "unused_param_analysis": True
       }
       
       try:
@@ -129,9 +133,10 @@ class ConfigDialog(ida_kernwin.Form):
           config = {
               "max_layers": self.max_layers.value,
               "auto_refresh_views": bool(self.cGroup5.value),
-              "show_debug": bool(self.cGroup3.value),
+              "show_debug": bool(self.cGroup4.value),
               "param_analysis": bool(self.cGroup1.value),
-              "func_type_analysis": bool(self.cGroup2.value)
+              "func_type_analysis": bool(self.cGroup2.value),
+              "unused_param_analysis": bool(self.cGroup3.value)
           }
           
           with open(self.config_path, 'w') as f:
@@ -179,28 +184,51 @@ def show_config_dialog():
 
 def first_config(self):
     try:
-            self.config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
+        self.config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
             
-            # Define default config
-            self.default_config = {
-                "max_layers": 4,
-                "auto_refresh_views": True,
-                "show_debug": False,
-                "param_analysis": True,
-                "func_type_analysis": True
-            }
+        # Define default config
+        self.default_config = {
+            "max_layers": 4,
+            "auto_refresh_views": True,
+            "show_debug": False,
+            "param_analysis": True,
+            "func_type_analysis": True,
+            "unused_param_analysis": True
+        }
             
-            # Check if config file exists, if not create it with default values
-            if not os.path.exists(self.config_path):
-                try:
+        # Mevcut config dosyasını kontrol et
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r') as f:
+                    current_config = json.load(f)
+                
+                # Eksik değerleri kontrol et ve ekle
+                updated = False
+                for key, value in self.default_config.items():
+                    if key not in current_config:
+                        current_config[key] = value
+                        updated = True
+                        print(f"Eksik config değeri eklendi: {key} = {value}")
+                
+                # Eğer değişiklik yapıldıysa dosyayı güncelle
+                if updated:
                     with open(self.config_path, 'w') as f:
-                        json.dump(self.default_config, f, indent=4)
-                    print(f"Created default config file at: {self.config_path}")
-                except Exception as e:
-                    print(f"Error creating default config file: {str(e)}")
+                        json.dump(current_config, f, indent=4)
+                    print("Config dosyası güncellendi")
+                        
+            except Exception as e:
+                print(f"Config dosyası okuma/yazma hatası: {str(e)}")
+        else:
+            # Config dosyası yoksa yeni oluştur
+            try:
+                with open(self.config_path, 'w') as f:
+                    json.dump(self.default_config, f, indent=4)
+                print(f"Varsayılan config dosyası oluşturuldu: {self.config_path}")
+            except Exception as e:
+                print(f"Default config dosyası oluşturma hatası: {str(e)}")
 
     except Exception as e:
-        print(f"Error in first_config: {str(e)}")  
+        print(f"first_config'de hata: {str(e)}")
 
 
 
@@ -239,6 +267,7 @@ class CallingConventionFixer:
 
         # Try decompilation
         try:
+            ida_hexrays.mark_cfunc_dirty(func_ea,False)
             cfunc = ida_hexrays.decompile(func_ea)
             if cfunc:
                 logger.debug("\nDecompiled function type:")
@@ -248,6 +277,283 @@ class CallingConventionFixer:
 
         logger.debug("===========================\n")
 
+
+    def _analyze_calls_and_update_signature(self, func_ea):
+        """Analyze all calls to a function and determine if parameters are undefined"""
+        logger = DebugLogger.get_instance()
+        
+        # Load config
+        config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except:
+            return False
+
+        if not config.get("call_analysis", True):
+            return False
+
+        try:
+            # Get all references to this function
+            xrefs = []
+            for xref in idautils.XrefsTo(func_ea, 0):
+                if xref.type in [ida_xref.fl_CN, ida_xref.fl_CF]:
+                    xrefs.append(xref.frm)
+
+            if not xrefs:
+                logger.debug(f"No calls found for function at {hex(func_ea)}")
+                return False
+
+            # Get function type information
+            tinfo = ida_typeinf.tinfo_t()
+            if not ida_typeinf.guess_tinfo(tinfo, func_ea):
+                logger.debug(f"Could not get type info for function at {hex(func_ea)}")
+                return False
+
+            func_details = ida_typeinf.func_type_data_t()
+            if not tinfo.get_func_details(func_details):
+                logger.debug(f"Could not get function details at {hex(func_ea)}")
+                return False
+
+            # Track parameter usage across all calls
+            param_count = func_details.size()
+            param_usage = {i: {'undefined_count': 0, 'total_calls': 0} for i in range(param_count)}
+            
+            if config.get("show_call_analysis", False):
+                logger.debug(f"\nAnalyzing calls for function at {hex(func_ea)}")
+                logger.debug(f"Number of parameters: {param_count}")
+                logger.debug(f"Number of calls: {len(xrefs)}")
+
+            #
+            def types_compatible(actual_type, expected_type):
+                """Check if two types are compatible"""
+                try:
+                    # Basic type compatibility checks
+                    if actual_type.is_ptr() and not expected_type.is_ptr():
+                        return False
+                    if actual_type.is_int() and expected_type.is_float():
+                        return False
+                    if actual_type.is_float() and expected_type.is_int():
+                        return False
+                        # Null kontrolleri eksik
+                    if actual_type is None or expected_type is None:
+                        return False                       
+                    # Tüm tip kombinasyonları kontrol edilmemiş
+                    if actual_type.is_array() and not expected_type.is_array():
+                        return False
+                    return True
+                except:
+                    return True
+            def check_function_parameter_mismatch(expr, cfunc):
+                """Check for potential parameter count mismatches in function calls"""
+                try:
+                    if expr.op == ida_hexrays.cot_call:
+                        # Get function type information
+                        func_type = expr.x.type
+                        if func_type.is_func():
+                            expected_args = func_type.get_nargs()
+                            actual_args = expr.a.size()
+                            
+                            # Check for significant parameter count mismatch
+                            if actual_args < expected_args:
+                                return True
+                            
+                            # Check argument types if available
+                            for i in range(min(actual_args, expected_args)):
+                                arg = expr.a[i]
+                                expected_type = func_type.get_nth_arg(i)
+                                
+                                # Check for potential type mismatches
+                                if not types_compatible(arg.type, expected_type):
+                                    return True
+                except:
+                    return False
+                return False
+            def check_undefined_patterns(expr, cfunc):
+                """Check various patterns that indicate undefined values using Hex-Rays API."""
+                try:
+                    # Check if the expression is a variable
+                    if expr.op == ida_hexrays.cot_var:
+                        lvar = cfunc.get_lvars()[expr.v.idx]
+                        if not lvar:
+                            return False
+
+                    # Check if the expression is a function call
+                    elif expr.op == ida_hexrays.cot_call:
+                        if check_function_parameter_mismatch(expr, cfunc):
+                            return True
+
+                    # Check if the expression is undefined using exflags
+                    if expr.exflags & ida_hexrays.EXFL_UNDEF:
+                        return True
+
+                    # Check for suspicious constant values
+                    elif expr.op == ida_hexrays.cot_num:
+                        suspicious_values = {
+                            0xBADF00D, 0xDEADBEEF, 0xCCCCCCCC,
+                            0xFEEEFEEE, 0xCDCDCDCD, 0xABABABAB,
+                            0xFFFFFFFE, 0xFFFFFFFF, 0x0,
+                            0xDEADC0DE, 0xDEADBEEF
+                        }
+                        if expr.numval() in suspicious_values:
+                            return True
+
+                    # Check for null or invalid pointers
+                    elif expr.op == ida_hexrays.cot_ptr:
+                        if expr.x.op == ida_hexrays.cot_num:
+                            val = expr.x.numval()
+                            if val < 0x1000:  # Likely null or invalid pointer
+                                return True
+
+                    # Check for memory accesses
+                    elif expr.op in [ida_hexrays.cot_memptr, ida_hexrays.cot_memref]:
+                        if expr.x.op == ida_hexrays.cot_var:
+                            # Check if base pointer is undefined
+                            if check_undefined_patterns(expr.x, cfunc):
+                                return True
+
+                except Exception as e:
+                    logger.debug(f"Error in check_undefined_patterns: {str(e)}")
+                    return False
+
+                return False
+
+            # Analyze each call
+            for call_ea in xrefs:
+                try:
+                    caller_func = ida_funcs.get_func(call_ea)
+                    if not caller_func:
+                        continue
+                    ida_hexrays.mark_cfunc_dirty(caller_func.start_ea,False)
+                    cfunc = ida_hexrays.decompile(caller_func.start_ea)
+                    if not cfunc:
+                        continue
+
+                    class CallArgVisitor(ida_hexrays.ctree_visitor_t):
+                        def __init__(self, target_ea, param_count):
+                            super().__init__(ida_hexrays.CV_FAST)
+                            self.target_ea = target_ea
+                            self.param_count = param_count
+                            self.call_found = False
+                            self.arg_status = []
+
+                        def visit_expr(self, expr):
+                            if expr.op == ida_hexrays.cot_call and expr.ea == self.target_ea:
+                                self.call_found = True
+                                
+                                # Check actual arguments passed
+                                for i in range(min(len(expr.a), self.param_count)):
+                                    is_undefined = check_undefined_patterns(expr.a[i], cfunc)
+                                    self.arg_status.append(is_undefined)
+                                
+                                # If fewer args than params, mark remaining as undefined
+                                while len(self.arg_status) < self.param_count:
+                                    self.arg_status.append(True)
+                                
+                                return 1
+                            return 0
+
+                    visitor = CallArgVisitor(call_ea, param_count)
+                    visitor.apply_to(cfunc.body, None)
+
+                    if visitor.call_found:
+                        for i, is_undefined in enumerate(visitor.arg_status):
+                            if i in param_usage:
+                                param_usage[i]['total_calls'] += 1
+                                if is_undefined:
+                                    param_usage[i]['undefined_count'] += 1
+
+                        if config.get("show_call_analysis", False):
+                            logger.debug(f"\nCall at {hex(call_ea)}:")
+                            for i, status in enumerate(visitor.arg_status):
+                                logger.debug(f"Param {i}: {'Undefined' if status else 'Defined'}")
+
+                except Exception as e:
+                    logger.debug(f"Error analyzing call at {hex(call_ea)}: {str(e)}")
+                    continue
+
+            # Calculate undefined ratio and track actually used parameters
+            undefined_ratios = {}
+            actually_used_params = []
+            for param_idx, stats in param_usage.items():
+                if stats['total_calls'] > 0:
+                    ratio = stats['undefined_count'] / stats['total_calls']
+                    undefined_ratios[param_idx] = ratio
+                    if ratio < 0.8:  # Parameter is defined in >20% of calls
+                        actually_used_params.append(param_idx)
+
+            if config.get("show_call_analysis", False):
+                logger.debug("\nParameter undefined ratios:")
+                for param_idx, ratio in undefined_ratios.items():
+                    logger.debug(f"Param {param_idx}: {ratio:.2%} undefined ({param_usage[param_idx]['undefined_count']}/{param_usage[param_idx]['total_calls']} calls)")
+
+            # Update function type if needed
+            original_param_count = func_details.size()
+            new_param_count = len(actually_used_params)
+
+            if new_param_count < original_param_count:
+                try:
+                    ida_hexrays.mark_cfunc_dirty(func_ea, False)
+                    cfunc = ida_hexrays.decompile(func_ea)
+                    if not cfunc:
+                        logger.debug("Failed to decompile function")
+                        return False
+                        
+                    original_tinfo = cfunc.type
+                    original_details = ida_typeinf.func_type_data_t()
+                    
+                    if not original_tinfo.get_func_details(original_details):
+                        logger.debug("Failed to get original function details")
+                        return False
+                        
+                    # Store original calling convention
+                    original_cc = original_details.cc
+                    logger.debug(f"Original calling convention (before): {original_cc}")
+                    
+                    # Create new function type with only actually used parameters
+                    new_func_details = ida_typeinf.func_type_data_t()
+                    new_func_details.rettype = original_details.rettype
+                    
+                    # Thiscall kontrolü
+                    if original_cc == ida_typeinf.CM_CC_THISCALL and new_param_count == 0:
+                        logger.debug("Thiscall detected with no parameters, converting to fastcall")
+                        new_func_details.cc = ida_typeinf.CM_CC_FASTCALL
+                    else:
+                        new_func_details.cc = original_cc
+                    
+                    for idx in actually_used_params:
+                        new_func_details.push_back(original_details[idx])
+                    
+                    new_tinfo = ida_typeinf.tinfo_t()
+                    if new_tinfo.create_func(new_func_details):
+                        logger.debug(f"New type info: {new_tinfo}")
+                        
+                        # Apply the new type
+                        if ida_typeinf.apply_tinfo(func_ea, new_tinfo, ida_typeinf.TINFO_DEFINITE):
+                            # Verify the final type
+                            cfunc = ida_hexrays.decompile(func_ea)
+                            final_tinfo = cfunc.type
+                            
+                            final_details = ida_typeinf.func_type_data_t()
+                            final_tinfo.get_func_details(final_details)
+                            
+                            logger.debug(f"Final calling convention: {final_details.cc}")
+                            
+                            logger.debug(f"\nSuccessfully updated function type at {hex(func_ea)}")
+                            logger.debug(f"Original parameter count: {original_param_count}")
+                            logger.debug(f"New parameter count: {new_param_count}")
+                            logger.debug(f"Actually used parameters: {actually_used_params}")
+                            return True
+                            
+                except Exception as e:
+                    logger.debug(f"Error updating function type: {str(e)}")
+                    return False
+
+                return False
+
+        except Exception as e:
+            logger.debug(f"Error analyzing calls for function at {hex(func_ea)}: {str(e)}")
+            return False
 
 
     def _analyze_and_remove_unused_parameters(self, func_ea):
@@ -265,6 +571,7 @@ class CallingConventionFixer:
             return False
         try:
             # Decompile the function
+            ida_hexrays.mark_cfunc_dirty(func_ea,False)
             cfunc = ida_hexrays.decompile(func_ea)
             if not cfunc:
                 return False
@@ -607,6 +914,7 @@ class CallingConventionFixer:
         """Get function type from both decompiler and IDA database"""
         # First try to get type from decompiler
         try:
+            ida_hexrays.mark_cfunc_dirty(func_ea,False)
             cfunc = ida_hexrays.decompile(func_ea)
             if cfunc:
                 return str(cfunc.type.dstr())
@@ -767,6 +1075,7 @@ class CallingConventionFixer:
                 logger.debug(f"Determined calling convention: {new_cc}")
 
                 # Try to decompile to get current function details
+                ida_hexrays.mark_cfunc_dirty(func_ea,False)
                 cfunc = ida_hexrays.decompile(func_ea)
                 if not cfunc:
                     logger.debug(f"Failed to decompile function at {hex(func_ea)}")
@@ -926,7 +1235,8 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                         "auto_refresh_views": True,
                         "show_debug": False,
                         "param_analysis": True,
-                        "func_type_analysis": True
+                        "func_type_analysis": True,
+                        "unused_param_analysis": True
                     }
 
                 logger.debug(f"Starting backwards analysis from {hex(start_ea)}")
@@ -1001,7 +1311,8 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                         if progress.check_cancelled():
                             print(f"\nOperation cancelled by user during function processing.")
                             return
-
+                if config["unused_param_analysis"]:
+                 fixer._analyze_calls_and_update_signature(start_ea)
                 progress.replace_message("Analysis completed successfully!")
                 print("\nAnalysis completed successfully!")
                 
