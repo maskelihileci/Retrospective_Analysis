@@ -27,7 +27,10 @@ The analysis begins from the selected function and iteratively scans the call hi
 Analyzes function call types (e.g., `__thiscall`, `__stdcall`), modifies them, and removes unused parameters afterward.  
 
 #### ⚙️ Function Call Type Analysis  
-Analyzes function call types, identifies inconsistencies or common patterns, and improves the function signature.  
+Analyzes function call types, identifies inconsistencies or common patterns, and improves the function signature. 
+
+#### 🚀 Unused Parameter Analysis in Call References (New!)
+This feature identifies and analyzes unused parameters within call references. It ensures cleaner and more optimized function signatures by removing redundant parameters detected in the call hierarchy.
 
 #### 🖥️ Easy Integration  
 Start the analysis directly from the context menu in the decompiled view (as shown in the image).  
@@ -45,9 +48,9 @@ Automatically refreshes the decompiled view after making changes.
 2. **Start the Analysis**  
    Select **Retrospective Analysis** from the context menu.
 
-   ![Context Menu](https://github.com/user-attachments/assets/49540f7c-52ee-4db9-b63b-6fc6d7ed23e1)
+   ![Context Menu](https://github.com/user-attachments/assets/e921a7b6-2550-4673-bd28-5305ae40924d)
 
-3. **Optionally Configure Analysis Settings**  
+4. **Optionally Configure Analysis Settings**  
    Adjust the analysis depth (1-10 layers) and start the analysis.
 
    ![Settings Menu](https://github.com/user-attachments/assets/18ea7cc3-dcd6-44c6-8de3-3cdc97791879)
