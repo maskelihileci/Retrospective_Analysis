@@ -1095,6 +1095,8 @@ class CallingConventionFixer:
 
                         # Remove unused parameters
                         self._analyze_and_remove_unused_parameters(func_ea)
+                        if config["unused_param_analysis"]:
+                            self._analyze_calls_and_update_signature(func_ea)
 
                         # Refresh view if in pseudocode window
                         widget_name = f"Pseudocode-{idc.get_func_name(func_ea)}"
@@ -1311,8 +1313,7 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                         if progress.check_cancelled():
                             print(f"\nOperation cancelled by user during function processing.")
                             return
-                if config["unused_param_analysis"]:
-                 fixer._analyze_calls_and_update_signature(start_ea)
+
                 progress.replace_message("Analysis completed successfully!")
                 print("\nAnalysis completed successfully!")
                 
