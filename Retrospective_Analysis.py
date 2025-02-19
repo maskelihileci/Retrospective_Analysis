@@ -10,6 +10,7 @@ import os
 import ida_diskio
 import json
 import ida_xref
+import re
 
 
 # Debug Logger sınıfı
@@ -67,25 +68,35 @@ class ConfigDialog(ida_kernwin.Form):
               <##Analysis depth (1-10):{max_layers}>
               
               Analysis Options:
+              <##Search Engine:{cGroup0}>
               <##Enable parameter analysis:{param_analysis}>{cGroup1}>
               <##Enable function type analysis:{func_type_analysis}>{cGroup2}>
               <##Enable unused parameter analysis in call references:{unused_param_analysis}>{cGroup3}>
+              <##Enable virtual call analysis:{virtual_call_analysis}>{cGroup6}>
               
               Debug Options:
               <##Show debug messages:{show_debug}>{cGroup4}>
               
               View Options:
               <##Auto refresh decompiler views:{auto_refresh_views}>{cGroup5}>
-              """, {
-                  'max_layers': Form.NumericInput(tp=Form.FT_DEC, value=self.config["max_layers"], swidth=5),
-                  'cGroup1': Form.ChkGroupControl(("param_analysis",), value=1 if self.config["param_analysis"] else 0),
-                  'cGroup2': Form.ChkGroupControl(("func_type_analysis",), value=1 if self.config["func_type_analysis"] else 0),
-                  'cGroup3': Form.ChkGroupControl(("unused_param_analysis",), value=1 if self.config["unused_param_analysis"] else 0),
-                  'cGroup4': Form.ChkGroupControl(("show_debug",), value=1 if self.config["show_debug"] else 0),
-                  'cGroup5': Form.ChkGroupControl(("auto_refresh_views",), value=1 if self.config["auto_refresh_views"] else 0)
-              })
-          
+                """, {
+                    'max_layers': Form.NumericInput(tp=Form.FT_DEC, value=self.config["max_layers"], swidth=5),
+                    'cGroup0': Form.DropdownListControl(items=["IDA-API","Hex-Rays"],),
+                    'cGroup1': Form.ChkGroupControl(("param_analysis",), value=1 if self.config["param_analysis"] else 0),
+                    'cGroup2': Form.ChkGroupControl(("func_type_analysis",), value=1 if self.config["func_type_analysis"] else 0),
+                    'cGroup3': Form.ChkGroupControl(("unused_param_analysis",), value=1 if self.config["unused_param_analysis"] else 0),
+                    'cGroup6': Form.ChkGroupControl(("virtual_call_analysis",), value=1 if self.config["virtual_call_analysis"] else 0),
+                    'cGroup4': Form.ChkGroupControl(("show_debug",), value=1 if self.config["show_debug"] else 0),
+                    'cGroup5': Form.ChkGroupControl(("auto_refresh_views",), value=1 if self.config["auto_refresh_views"] else 0)
+                })          
           Form.Compile(self)
+          # Dropdown'ın başlangıç değerini ayarla
+          self.cGroup0.items = ["IDA-API", "Hex-Rays"]
+          # Dropdown'ın başlangıç değerini ayarla
+          if self.config["search_engine"] == "IDA-API":
+                self.cGroup0.value = 0
+          elif self.config["search_engine"] == "Hex-Rays":
+                self.cGroup0.value = 1
           
       except Exception as e:
           print(f"Error initializing ConfigDialog: {str(e)}")
@@ -111,7 +122,9 @@ class ConfigDialog(ida_kernwin.Form):
           "show_debug": False,
           "param_analysis": True,
           "func_type_analysis": True,
-          "unused_param_analysis": True
+          "unused_param_analysis": True,
+          "virtual_call_analysis": True,
+          "search_engine" : "IDA-API"
       }
       
       try:
@@ -121,12 +134,15 @@ class ConfigDialog(ida_kernwin.Form):
                   # Validate max_layers
                   if "max_layers" in config:
                       config["max_layers"] = max(1, min(10, int(config["max_layers"])))
+
+                  if "search_engine" not in config:
+                      config["search_engine"] = "IDA-API"
                   return config
       except Exception as e:
           print(f"Error loading config: {e}")
       
       return default_config
-
+  #
   def save_config(self):
       logger = DebugLogger.get_instance()
       try:
@@ -136,7 +152,9 @@ class ConfigDialog(ida_kernwin.Form):
               "show_debug": bool(self.cGroup4.value),
               "param_analysis": bool(self.cGroup1.value),
               "func_type_analysis": bool(self.cGroup2.value),
-              "unused_param_analysis": bool(self.cGroup3.value)
+              "unused_param_analysis": bool(self.cGroup3.value),
+              "virtual_call_analysis": bool(self.cGroup6.value),
+              "search_engine": self.cGroup0.items[self.cGroup0.value]
           }
           
           with open(self.config_path, 'w') as f:
@@ -185,7 +203,7 @@ def show_config_dialog():
 def first_config(self):
     try:
         self.config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
-            
+        
         # Define default config
         self.default_config = {
             "max_layers": 4,
@@ -193,42 +211,44 @@ def first_config(self):
             "show_debug": False,
             "param_analysis": True,
             "func_type_analysis": True,
-            "unused_param_analysis": True
+            "unused_param_analysis": True,
+            "virtual_call_analysis": True,
+            "search_engine" : "IDA-API"
         }
-            
-        # Mevcut config dosyasını kontrol et
+        
+        # Check if config file exists
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, 'r') as f:
                     current_config = json.load(f)
                 
-                # Eksik değerleri kontrol et ve ekle
+                # Check for missing values and add them
                 updated = False
                 for key, value in self.default_config.items():
                     if key not in current_config:
                         current_config[key] = value
                         updated = True
-                        print(f"Eksik config değeri eklendi: {key} = {value}")
+                        print(f"Missing config value added: {key} = {value}")
                 
-                # Eğer değişiklik yapıldıysa dosyayı güncelle
+                # If changes were made, update the file
                 if updated:
                     with open(self.config_path, 'w') as f:
                         json.dump(current_config, f, indent=4)
-                    print("Config dosyası güncellendi")
+                    print("Config file updated")
                         
             except Exception as e:
-                print(f"Config dosyası okuma/yazma hatası: {str(e)}")
+                print(f"Error reading/writing config file: {str(e)}")
         else:
-            # Config dosyası yoksa yeni oluştur
+            # Create config file if it doesn't exist
             try:
                 with open(self.config_path, 'w') as f:
                     json.dump(self.default_config, f, indent=4)
-                print(f"Varsayılan config dosyası oluşturuldu: {self.config_path}")
+                print(f"Default config file created: {self.config_path}")
             except Exception as e:
-                print(f"Default config dosyası oluşturma hatası: {str(e)}")
+                print(f"Error creating default config file: {str(e)}")
 
     except Exception as e:
-        print(f"first_config'de hata: {str(e)}")
+        print(f"Error in first_config: {str(e)}")
 
 
 
@@ -278,6 +298,468 @@ class CallingConventionFixer:
         logger.debug("===========================\n")
 
 
+    #
+    def _getmt_cc_name(self,new_func_type_str):
+        # Calling Convention isimlerini döndür
+        logger = DebugLogger.get_instance()
+        original_cc = ida_typeinf.CM_CC_UNKNOWN
+        if "__thiscall" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_THISCALL
+            logger.debug("[_getmt_cc_name] Calling convention: __thiscall")
+        if "__fastcall" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_FASTCALL
+            logger.debug("[_getmt_cc_name] Calling convention: __fastcall")
+        if "__cdecl" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_CDECL
+            logger.debug("[_getmt_cc_name] Calling convention: __cdecl")
+        if "__stdcall" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_STDCALL
+            logger.debug("[_getmt_cc_name] Calling convention: __stdcall")
+        if "__usercall" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_SPECIAL
+        if "__userpurge" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_SPECIAL
+        if "__pascal" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_PASCAL
+        if "__swiftcall" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_SWIFT
+        if "__golang" in new_func_type_str:
+            original_cc = ida_typeinf.CM_CC_GOLANG
+        return original_cc
+    
+    def _getmt_rettype_name(self,new_func_type_str):
+        logger = DebugLogger.get_instance()
+        rettype = ida_typeinf.tinfo_t()
+        return_type_str = new_func_type_str.split('(')[0].strip()
+        return_type_str = re.sub(r'\bconst\b', '', return_type_str).strip() #Remove const keyword
+        if return_type_str == "void":
+            rettype.create_simple_type(ida_typeinf.BTF_VOID)
+            logger.debug("[_getmt_rettype_name] Return type: void")
+        elif return_type_str == "int" or return_type_str == "signed int":
+            rettype.create_simple_type(ida_typeinf.BTF_INT)
+            logger.debug("[_getmt_rettype_name] Return type: int")
+        elif return_type_str == "char*":
+            rettype.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_CHAR))
+            logger.debug("[_getmt_rettype_name] Return type: char*")
+        elif return_type_str == "unsigned int" or return_type_str == "uint":
+            rettype.create_simple_type(ida_typeinf.BTF_UINT)
+            logger.debug("[_getmt_rettype_name] Return type: unsigned int")
+        elif return_type_str == "long long" or return_type_str == "signed long long":
+                rettype.create_simple_type(ida_typeinf.BTF_INT64)
+                logger.debug("[_getmt_rettype_name] Return type: long long")
+        elif return_type_str == "unsigned long long":
+                rettype.create_simple_type(ida_typeinf.BTF_UINT64)
+                logger.debug("[_getmt_rettype_name] Return type: unsigned long long")
+        elif return_type_str == "float":
+                rettype.create_simple_type(ida_typeinf.BTF_FLOAT)
+                logger.debug("[_getmt_rettype_name] Return type: float")
+        elif return_type_str == "double":
+                rettype.create_simple_type(ida_typeinf.BTF_DOUBLE)
+                logger.debug("[_getmt_rettype_name] Return type: double")
+        elif return_type_str == "boolean":
+                rettype.create_simple_type(ida_typeinf.BTF_BOOL)
+                logger.debug("[_getmt_rettype_name] Return type: boolean")
+        elif return_type_str.endswith('*'):
+            rettype.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_VOID))
+            logger.debug(f"[_getmt_rettype_name] Return type: pointer (default void *)")
+        else:
+            rettype.create_simple_type(ida_typeinf.BTF_INT)  # Default return type
+            logger.debug(f"[_getmt_rettype_name] Return type: Unknown, default int")
+        return rettype
+    
+    def _analyze_virtual_calls_and_update_signature(self,func_ea):
+        """Analyze virtual calls, find undefined variables, and update their types."""
+        logger = DebugLogger.get_instance()
+        logger.debug(f"[_analyze_virtual_calls_and_update_signature] Analyzing function at {hex(func_ea)}")
+        config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except:
+            return False
+
+        if not config.get("virtual_call_analysis", True):
+            return False
+
+        try:
+            ida_hexrays.mark_cfunc_dirty(func_ea, False)
+            cfunc = ida_hexrays.decompile(func_ea)
+            if not cfunc:
+                logger.debug(f"[_analyze_virtual_calls_and_update_signature] Could not decompile function at {hex(func_ea)}")
+                return False
+            logger.debug(f"[_analyze_virtual_calls_and_update_signature] Function at {hex(func_ea)} decompiled successfully.")
+
+            class UndefinedVarCollector(ida_hexrays.ctree_visitor_t):
+                def __init__(self, cfunc):
+                    ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                    self.cfunc = cfunc
+                    self.undefined_vars = set()
+                    self.undefined_vars_propagated = set()
+                    self.var_assignments = {}
+                    self.virtual_calls = {}
+                    self.undefined_vars_in_helpers = {}
+                    self.helper_var_types = {} 
+                    self.size_functions = {
+                        "LOBYTE": ida_typeinf.BTF_UINT8,
+                        "HIBYTE": ida_typeinf.BTF_UINT8,
+                        "LOWORD": ida_typeinf.BTF_UINT16,
+                        "HIWORD": ida_typeinf.BTF_UINT16,
+                        "LODWORD": ida_typeinf.BTF_UINT32,
+                        "HIDWORD": ida_typeinf.BTF_UINT32,
+                        "BYTE": ida_typeinf.BTF_UINT8,
+                        "WORD": ida_typeinf.BTF_UINT16,
+                        "DWORD": ida_typeinf.BTF_UINT32,
+                        "QWORD": ida_typeinf.BTF_UINT64
+                    }
+                    logger.debug(f"[UndefinedVarCollector] Initialized collector for function at {hex(cfunc.entry_ea)}")
+
+                def _is_undefined(self, expr):
+                    """Check if an expression is an undefined variable."""
+
+                    if expr.op != ida_hexrays.cot_var:
+                        return False
+
+                    lvar = self.cfunc.get_lvars()[expr.v.idx]
+                    if not lvar:
+                        return False
+
+                    if hasattr(lvar, 'has_user_info') and lvar.has_user_info and hasattr(lvar, 'user_info') and lvar.user_info is None:
+                            return True
+
+                    if expr.exflags & ida_hexrays.EXFL_UNDEF:
+                            return True
+
+                    if expr.v.idx in self.undefined_vars_propagated:
+                            return True
+                    return False
+
+
+                def visit_expr(self, expr):
+                    if expr.op == ida_hexrays.cot_call and expr.x.op == ida_hexrays.cot_helper:
+                        helper_name = expr.x.helper
+                        if helper_name in self.size_functions and expr.a and expr.a[0].op == ida_hexrays.cot_var:
+                            var_idx = expr.a[0].v.idx
+                            self.helper_var_types[var_idx] = self.size_functions[helper_name]
+
+                    if expr.op == ida_hexrays.cot_var and hasattr(expr,'v') and hasattr(expr.v,'idx'):
+                        lvar_index = expr.v.idx
+                        if self._is_undefined(expr):
+                            self.undefined_vars.add(lvar_index)
+                            logger.debug(f"[UndefinedVarCollector] Added undefined variable index: {lvar_index}")
+                    if expr.op == ida_hexrays.cot_asg and hasattr(expr, 'x') and hasattr(expr.x, 'v') and hasattr(expr.x.v,'idx'):
+                        lvar_index = expr.x.v.idx
+                        if self._is_undefined(expr.y):
+                            if lvar_index not in self.undefined_vars_propagated:
+                                self.undefined_vars_propagated.add(lvar_index)
+                                self.undefined_vars.add(lvar_index)
+                                logger.debug(f"[UndefinedVarCollector] Propagated Undefined var via assignment: {lvar_index}")
+                        elif hasattr(expr.y, 'op') and expr.y.op == ida_hexrays.cot_var and hasattr(expr.y,'v') and hasattr(expr.y.v,'idx') and expr.y.v.idx in self.undefined_vars_propagated:
+                            if lvar_index not in self.undefined_vars_propagated:
+                                self.undefined_vars_propagated.add(lvar_index)
+                                self.undefined_vars.add(lvar_index)
+                                logger.debug(f"[UndefinedVarCollector] Propagated Undefined var via assignment from propagated: {lvar_index}")
+                    return 0
+
+
+                def traverse_tree_and_collect_vars(self, expr):
+                    """
+                    Traverse the given tree and collect variable names and
+                    corresponding cexpr_t objects.
+
+                    Args:
+                        expr: The root node of the tree as a cexpr_t object.
+                        cfunc: The function cfunc_t object.
+
+                    Returns:
+                        A list of tuples containing the variable names and
+                        cexpr_t objects found in the tree. Each element is a
+                        tuple of (var_name, cexpr_t).
+                    """
+                    var_info = []  # List to store (var_name, cexpr_t) tuples
+                    added_vars = set() # Set to store added variable names
+
+                    def _traverse(expr):
+                        if expr is None:
+                            return
+
+                        if expr.op == ida_hexrays.cot_call:
+                            # Traverse function call arguments
+                            if expr.a:
+                                for arg in expr.a:
+                                    _traverse(arg)
+                            # Skip function name (x)
+                            return
+
+                        if expr.op == ida_hexrays.cot_var:
+                            lvar = self.cfunc.get_lvars()[expr.v.idx]
+                            if lvar and lvar.name not in added_vars:
+                                var_info.append((lvar.name, expr))
+                                added_vars.add(lvar.name)
+
+                        # Traverse the tree
+                        if expr.a:
+                            for arg in expr.a:
+                                _traverse(arg)
+
+                        if expr.x:
+                            _traverse(expr.x)
+                        if expr.y:
+                            _traverse(expr.y)
+                        if expr.z:
+                            _traverse(expr.z)
+
+                    _traverse(expr)
+                    return var_info
+                
+
+            collector = UndefinedVarCollector(cfunc)
+            collector.apply_to(cfunc.body, None)
+            logger.debug(f"Undefined vars: {collector.undefined_vars}, Helper types: {collector.helper_var_types}")
+
+            class UndefinedCallVisitor(ida_hexrays.ctree_visitor_t):
+                def __init__(self, cfunc, collector):
+                    ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                    self.cfunc = cfunc
+                    self.collector = collector
+                    self.virtual_calls = {}
+
+                def visit_expr(self, expr):
+                    if expr.op == ida_hexrays.cot_call:
+                        indices = []
+                        if expr.a:
+                            for i, arg in enumerate(expr.a):
+                                var_info = self.collector.traverse_tree_and_collect_vars(arg)
+                                for var_name, var_expr in var_info:
+                                    var_idx = var_expr.v.idx
+                                    if var_idx in self.collector.undefined_vars or var_idx in self.collector.helper_var_types:
+                                        if i not in indices:
+                                            indices.append(i)
+                        if indices:
+                            self.virtual_calls[expr.ea] = indices
+                    return 0
+
+            callVisitor = UndefinedCallVisitor(cfunc, collector)
+            callVisitor.apply_to(cfunc.body, None)
+            logger.debug(f"Detected virtual calls: {callVisitor.virtual_calls}")
+
+            # Update virtual call types
+            for call_ea, undefined_args in callVisitor.virtual_calls.items():
+                # Get cexpr from the address
+                class ExprFinder(ida_hexrays.ctree_visitor_t):
+                    def __init__(self, target_ea):
+                        ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                        self.target_ea = target_ea
+                        self.found_expr = None
+                        logger.debug(f"[ExprFinder] Initialized to find expression at {hex(target_ea)}")
+
+                    def visit_expr(self, expr):
+                        logger.debug(f"[ExprFinder.visit_expr] Visiting expression: {expr} at {hex(expr.ea)}")
+                        logger.debug(f"[ExprFinder.visit_expr] Call expression: {expr} at {hex(call_ea)}")
+                        if expr.ea == self.target_ea:
+                            if expr.a is None:
+                                return 0
+                            self.found_expr = expr
+                            logger.debug(f"[ExprFinder.visit_expr] Found target expression: {expr}")
+                            return 1
+                        return 0
+                expr_finder = ExprFinder(call_ea)
+                expr_finder.apply_to(cfunc.body, None)
+                if expr_finder.found_expr:
+                    func_ptr_ea = expr_finder.found_expr.x.ea if hasattr(expr_finder.found_expr, 'x') else idaapi.BADADDR
+                    if func_ptr_ea == idaapi.BADADDR:
+                        func_ptr_ea = expr_finder.found_expr.ea if hasattr(expr_finder.found_expr, 'ea') else idaapi.BADADDR
+                    logger.debug(f"[_analyze_virtual_calls_and_update_signature] Found call expression at {hex(call_ea)} with function pointer at {hex(func_ptr_ea)}")
+                    if func_ptr_ea and func_ptr_ea != idaapi.BADADDR:
+                        self._update_virtual_call_type(expr_finder.found_expr, func_ptr_ea, cfunc, undefined_args, expr_finder,collector)
+                    else:
+                        logger.debug(f"[_analyze_virtual_calls_and_update_signature] Skip call type update {hex(call_ea)} because function address could not be found.")
+
+            return True
+        except Exception as e:
+            logger.debug(f"[_analyze_virtual_calls_and_update_signature] Error analyzing virtual calls for {hex(func_ea)}: {str(e)}")
+            return False
+        
+    def _update_virtual_call_type(self,call_expr, func_ptr_ea, cfunc, undefined_args, expr_finder,collector):
+        logger = DebugLogger.get_instance()
+        logger.debug(f"[_update_virtual_call_type] Updating virtual call type at {hex(call_expr.ea)}, func_ptr_ea: {hex(func_ptr_ea)}, undefined_args: {undefined_args}")
+        try:
+            if not call_expr or not func_ptr_ea or func_ptr_ea == idaapi.BADADDR:
+                logger.debug("[_update_virtual_call_type] Invalid call expression or function pointer")
+                return False
+
+            current_ea = call_expr.ea if hasattr(call_expr, 'ea') else idaapi.BADADDR
+            if current_ea == idaapi.BADADDR:
+                logger.debug("[_update_virtual_call_type] Invalid EA value")
+                return False
+
+            # Log original information
+            logger.debug("\n=== Original Call Information ===")
+            logger.debug(f"Call Address: {hex(current_ea)}")
+            logger.debug(f"Function Pointer: {hex(func_ptr_ea)}")
+            if hasattr(call_expr, 'x') and hasattr(call_expr.x, 'type'):
+                logger.debug(f"Return Type: {call_expr.x.type.get_rettype()}")
+                logger.debug(f"Original Function Type: {call_expr.x.type}")
+                original_func_type = call_expr.x.type
+                logger.debug(f"Original_func_type : {original_func_type}")
+                logger.debug(f"Original_func_type type : {type(original_func_type)}")
+            else:
+                logger.debug(f"Return Type: N/A")
+                logger.debug("[_update_virtual_call_type] Original Function Type not found")
+                original_func_type = None
+
+            if expr_finder and expr_finder.found_expr:
+                try:
+                    # Get the virtual call expression
+                    vcall_expr = expr_finder.found_expr
+                    logger.debug(f"[_update_virtual_call_type] Found virtual call expression: {vcall_expr}")
+
+                    # Create new type info for the virtual function call
+                    new_func_type_str = ""
+
+                    if original_func_type:
+                        new_func_type_str = str(original_func_type)
+                        logger.debug(f"[_update_virtual_call_type] Original function type string: {new_func_type_str}")
+
+                    new_tinfo = ida_typeinf.tinfo_t()
+                    ftd = ida_typeinf.func_type_data_t()
+                    if hasattr(call_expr.x, 'type') and hasattr(call_expr.x.type,'get_rettype'):
+                        ftd.rettype = call_expr.x.type.get_rettype()
+                    else:
+                        ftd.rettype = self._getmt_rettype_name(new_func_type_str)
+                    ftd.cc = self._getmt_cc_name(new_func_type_str)  # Set the calling convention
+
+                    # Corrected argument type handling
+                    for i in range(len(call_expr.a) if call_expr.a else 0):
+                        if i in undefined_args:  # Only process arguments that need to be corrected
+                            arg = call_expr.a[i]
+                            has_helper = False
+                            
+                            # Helper type check
+                            if arg.op == ida_hexrays.cot_var:
+                                var_idx = arg.v.idx
+                                if var_idx in collector.helper_var_types:
+                                    new_arg = ida_typeinf.funcarg_t()
+                                    new_arg.type.create_simple_type(collector.helper_var_types[var_idx])
+                                    ftd.push_back(new_arg)
+                                    has_helper = True
+                                    logger.debug(f"Argument {i} corrected with helper type")
+                            
+                            # Nested helper check
+                            if not has_helper:
+                                var_info = collector.traverse_tree_and_collect_vars(arg)
+                                for var_name, var_expr in var_info:
+                                    var_idx = var_expr.v.idx
+                                    if var_idx in collector.helper_var_types:
+                                        new_arg = ida_typeinf.funcarg_t()
+                                        new_arg.type.create_simple_type(collector.helper_var_types[var_idx])
+                                        ftd.push_back(new_arg)
+                                        has_helper = True
+                                        logger.debug(f"Argument {i} corrected with nested helper type")
+                                        break
+                            
+                            if not has_helper:
+                                logger.debug(f"Argument {i} is undefined and has no helper, SKIPPED")
+                        else:
+                            # Preserve original argument
+                            original_arg = ida_typeinf.funcarg_t()
+                            original_arg.type = call_expr.a[i].type
+                            ftd.push_back(original_arg)
+                            logger.debug(f"Argument {i} preserved as original")
+
+                    if not new_tinfo.create_func(ftd):
+                        logger.debug(f"[_update_virtual_call_type] Failed to create func type with func_type_data_t")
+                        ida_typeinf.clear_tinfo_t(new_tinfo)
+                        return False
+
+                    new_ptr_tinfo = ida_typeinf.tinfo_t()
+                    new_ptr_tinfo.create_ptr(new_tinfo)
+
+                    logger.debug(f"\n=== New Type Information ===")
+                    logger.debug(f"Function type: {new_tinfo}")
+                    logger.debug(f"Pointer type: {new_ptr_tinfo}")
+
+                    # Update the call expression type
+                    if hasattr(vcall_expr, 'x') and vcall_expr.x:
+
+                        # Update the function pointer type in expression
+                        if idaapi.set_op_tinfo(vcall_expr.x.ea, 0, new_ptr_tinfo):
+                            idaapi.set_op_tinfo(vcall_expr.ea, 0, new_tinfo)
+                            pass
+                        elif not idaapi.set_op_tinfo(vcall_expr.ea, 0, new_tinfo):
+                            logger.debug(f"[_update_virtual_call_type] Failed to set new tinfo for call expression")
+                            ida_typeinf.clear_tinfo_t(new_tinfo)
+                            return False
+                        logger.debug(f"[_update_virtual_call_type] Updated function pointer type: {new_ptr_tinfo}")
+
+                    ida_hexrays.mark_cfunc_dirty(cfunc.entry_ea, False)
+                    cfunc = ida_hexrays.decompile(cfunc.entry_ea)
+                    if cfunc:
+                        logger.debug("\n=== Call Update Status ===")
+                        logger.debug(f"Successfully updated virtual call at {hex(current_ea)}")
+                        logger.debug(f"New function type: {new_tinfo}")
+                        ida_typeinf.clear_tinfo_t(new_tinfo)
+                        return True
+                    else:
+                        logger.debug(" [_update_virtual_call_type] Failed to get function object after update.")
+                        ida_typeinf.clear_tinfo_t(new_tinfo)
+                        return False
+
+                except Exception as e:
+                    logger.debug(f"[_update_virtual_call_type] === Expression Update Error ===")
+                    logger.debug(f"[_update_virtual_call_type] Error: {str(e)}")
+                    logger.debug(f"[_update_virtual_call_type] Error type: {type(e)}")
+                    raise
+            else:
+                logger.debug(" [_update_virtual_call_type] Could not find target expression")
+                return False
+
+        except Exception as e:
+            logger.debug(f"[_update_virtual_call_type] === Error Information ===")
+            logger.debug(f"[_update_virtual_call_type] Error in _update_virtual_call_type: {str(e)}")
+            logger.debug(f"[_update_virtual_call_type] Error type: {type(e)}")
+            return False
+        
+    def _is_virtual_call(self, expr):
+            """Check if an expression is a virtual call."""
+            if expr.op != ida_hexrays.cot_call:
+                return False
+
+            if hasattr(expr, 'x') and self._is_potential_vtable_access(expr.x):
+                return True
+            return False
+
+    def _is_potential_vtable_access(self, expr):
+            """Check various vtable access patterns"""
+            logger = DebugLogger.get_instance()
+            if not expr:
+                return False
+
+            try:
+                # Pattern 1: Direct pointer dereference
+                if expr.op == ida_hexrays.cot_ptr:
+                    return True
+
+                # Pattern 2: Member pointer access
+                if expr.op == ida_hexrays.cot_memptr:
+                    return True
+
+                # Pattern 3: Addition operation (possible vtable offset)
+                if expr.op == ida_hexrays.cot_add:
+                    if hasattr(expr, 'x') and expr.x:
+                        if expr.x.op == ida_hexrays.cot_ptr:
+                            return True
+                            #if self._check_expr_for_param(expr.x, "vtable base", True):
+                            #   return True
+
+                # Pattern 4: Cast operations
+                if expr.op == ida_hexrays.cot_cast:
+                    return self._is_potential_vtable_access(expr.x if hasattr(expr, 'x') else None)
+                
+            except Exception as ex:
+                 logger.debug(f"Error in _is_potential_vtable_access: {str(ex)}")
+
+            return False
+
     def _analyze_calls_and_update_signature(self, func_ea):
         """Analyze all calls to a function and determine if parameters are undefined"""
         logger = DebugLogger.get_instance()
@@ -290,7 +772,7 @@ class CallingConventionFixer:
         except:
             return False
 
-        if not config.get("call_analysis", True):
+        if not config.get("unused_param_analysis", True):
             return False
 
         try:
@@ -306,20 +788,13 @@ class CallingConventionFixer:
 
             # Get function type information
             tinfo = ida_typeinf.tinfo_t()
-            if not ida_typeinf.guess_tinfo(tinfo, func_ea):
-                logger.debug(f"Could not get type info for function at {hex(func_ea)}")
-                return False
-
             func_details = ida_typeinf.func_type_data_t()
-            if not tinfo.get_func_details(func_details):
-                logger.debug(f"Could not get function details at {hex(func_ea)}")
-                return False
 
             # Track parameter usage across all calls
             param_count = func_details.size()
             param_usage = {i: {'undefined_count': 0, 'total_calls': 0} for i in range(param_count)}
             
-            if config.get("show_call_analysis", False):
+            if config.get("show_debug", False):
                 logger.debug(f"\nAnalyzing calls for function at {hex(func_ea)}")
                 logger.debug(f"Number of parameters: {param_count}")
                 logger.debug(f"Number of calls: {len(xrefs)}")
@@ -463,7 +938,7 @@ class CallingConventionFixer:
                                 if is_undefined:
                                     param_usage[i]['undefined_count'] += 1
 
-                        if config.get("show_call_analysis", False):
+                        if config.get("show_debug", False):
                             logger.debug(f"\nCall at {hex(call_ea)}:")
                             for i, status in enumerate(visitor.arg_status):
                                 logger.debug(f"Param {i}: {'Undefined' if status else 'Defined'}")
@@ -482,7 +957,7 @@ class CallingConventionFixer:
                     if ratio < 0.8:  # Parameter is defined in >20% of calls
                         actually_used_params.append(param_idx)
 
-            if config.get("show_call_analysis", False):
+            if config.get("show_debug", False):
                 logger.debug("\nParameter undefined ratios:")
                 for param_idx, ratio in undefined_ratios.items():
                     logger.debug(f"Param {param_idx}: {ratio:.2%} undefined ({param_usage[param_idx]['undefined_count']}/{param_usage[param_idx]['total_calls']} calls)")
@@ -555,10 +1030,51 @@ class CallingConventionFixer:
             logger.debug(f"Error analyzing calls for function at {hex(func_ea)}: {str(e)}")
             return False
 
+    def _determine_new_calling_convention(self, original_cc, really_used_params, total_params):
+        logger = DebugLogger.get_instance()
+
+        # Calling convention specific register usage maps
+        CC_REGISTER_MAPS = {
+            ida_typeinf.CM_CC_FASTCALL: {
+                "x64": ["rcx", "rdx", "r8", "r9"],
+                "x86": ["ecx", "edx"]
+            },
+            ida_typeinf.CM_CC_THISCALL: {
+                "x86": ["ecx"],
+                "x64": ["rcx"]
+            }
+        }
+
+        is_64bit = self.is_64bit()
+        arch = 'x64' if is_64bit else 'x86'
+
+        # Thiscall handling
+        if original_cc == ida_typeinf.CM_CC_THISCALL:
+            if 0 not in really_used_params:
+                logger.debug("Thiscall with unused 'this' parameter - converting")
+                if is_64bit:
+                    return ida_typeinf.CM_CC_FASTCALL
+                else:
+                    return ida_typeinf.CM_CC_STDCALL
+            return original_cc
+
+        # Fastcall handling
+        if original_cc == ida_typeinf.CM_CC_FASTCALL:
+            register_count = len(CC_REGISTER_MAPS[ida_typeinf.CM_CC_FASTCALL][arch])
+            unused_registers = [i for i in range(register_count) if i not in really_used_params]
+            later_params_used = any(i in really_used_params for i in range(register_count, total_params))
+
+            if unused_registers and later_params_used:
+                if not is_64bit:  # x86 only
+                    return ida_typeinf.CM_CC_CDECL
+
+        return original_cc
+
 
     def _analyze_and_remove_unused_parameters(self, func_ea):
         """Analyze and remove unused parameters for all calling conventions"""
         logger = DebugLogger.get_instance()
+
         # Load config
         config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
         try:
@@ -569,9 +1085,10 @@ class CallingConventionFixer:
 
         if not config.get("param_analysis", True):
             return False
+
         try:
             # Decompile the function
-            ida_hexrays.mark_cfunc_dirty(func_ea,False)
+            ida_hexrays.mark_cfunc_dirty(func_ea, False)
             cfunc = ida_hexrays.decompile(func_ea)
             if not cfunc:
                 return False
@@ -590,14 +1107,13 @@ class CallingConventionFixer:
                     self.param_references = {}  # Track parameter references
 
                 def _get_param_index(self, lvar):
-                    if not lvar.is_arg_var:  # Sadece argüman olup olmadığını kontrol et
+                    if not lvar.is_arg_var:
                         return None
-                    
-                    # Argümanlar listesindeki sırasını bul
+
+                    # Find position in arguments list
                     for i, arg in enumerate(self.cfunc.arguments):
                         if arg == lvar:
                             return i
-                            
                     return None
 
                 def visit_expr(self, expr):
@@ -637,35 +1153,48 @@ class CallingConventionFixer:
                     logger.debug(f"  Actually Used: {is_really_used}")
                     logger.debug(f"  References: {[hex(ref) for ref in refs]}")
 
+            # Determine new calling convention
+            new_cc = self._determine_new_calling_convention(
+                func_details.cc,
+                really_used_params,
+                len(func_details)
+            )
+
             # Create new function details
             new_func_details = ida_typeinf.func_type_data_t()
             new_func_details.rettype = func_details.rettype
+            new_func_details.cc = new_cc
 
-            # Calling convention kontrolü
-            if func_details.cc == ida_typeinf.CM_CC_THISCALL and len(really_used_params) == 0:
-                logger.debug(f"Converting thiscall to cdecl for function at {hex(func_ea)} due to no used parameters")
-                new_func_details.cc = ida_typeinf.CM_CC_CDECL
+            # Log calling convention change
+            if new_cc != func_details.cc:
+                logger.debug(f"Calling convention changed from {func_details.cc} to {new_cc}")
+
+            # Handle parameters based on calling convention
+            if new_cc == ida_typeinf.CM_CC_THISCALL:
+                # Always include 'this' parameter for thiscall
+                new_func_details.push_back(func_details[0])
+                # Add other used parameters
+                for i in range(1, len(func_details)):
+                    if i in really_used_params:
+                        new_func_details.push_back(func_details[i])
             else:
-                new_func_details.cc = func_details.cc
+                # For other calling conventions, add only used parameters
+                stack_args = [arg for arg in cfunc.arguments if arg.is_stk_var()]
+                
+                if stack_args:
+                    first_param_idx = cfunc.arguments.index(stack_args[0])
 
-            # Orijinal parametreleri koru ve sadece kullanılanları ekle
-            for i in range(len(func_details)):
-                if i in really_used_params:
-                    param = func_details[i]
-                    #param.name = ""  # Parametre ismini boş bırak
-                    new_func_details.push_back(param)  # Parametre ismini olduğu gibi koru
+                    if first_param_idx not in really_used_params and any(i in really_used_params for i in range(first_param_idx + 1, len(func_details))):
+                        logger.debug(f"First stack parameter (index {first_param_idx}) is unused but later stack parameters are used. Keeping it.")
+                        new_func_details.push_back(func_details[first_param_idx])
 
-            # Thiscall için dummy parametre eklemesi
-            if new_func_details.cc == ida_typeinf.CM_CC_THISCALL and len(new_func_details) == 0:
-                logger.debug(f"Adding dummy 'this' parameter for thiscall function at {hex(func_ea)}")
-                first_param = func_details[0]
-                #first_param.name = ""  # Parametre ismini boş bırak
-                new_func_details.push_back(first_param)  # İlk parametreyi olduğu gibi koru
+                for i in range(len(func_details)):
+                    if i in really_used_params:
+                        new_func_details.push_back(func_details[i])
 
-            # Create and apply the new type
+            # Create and apply new type
             new_tinfo = ida_typeinf.tinfo_t()
             new_tinfo.create_func(new_func_details)
-            #ida_typeinf.apply_callee_tinfo(func_ea, new_tinfo)
 
             if ida_typeinf.apply_tinfo(func_ea, new_tinfo, ida_typeinf.TINFO_DEFINITE):
                 logger.debug(f"\nSuccessfully updated function type at {hex(func_ea)}")
@@ -819,18 +1348,250 @@ class CallingConventionFixer:
         checker.apply_to(cfunc.body, None)
         return checker.is_used
 
-    def _determine_calling_convention(self, func_ea, reg_specs):
-        """Determine the appropriate calling convention based on register specifications and architecture"""
+    def _is_register_used_in_virtual_call(self, cfunc, reg, param_names):
+        """
+        Checks if a register is used ONLY in virtual function calls.
+        """
+        logger = DebugLogger.get_instance()
+        if not cfunc or not hasattr(cfunc, 'body'):
+            logger.debug("No function body available")
+            return False
+
+        class VirtualCallChecker(ida_hexrays.ctree_visitor_t):
+            def __init__(self, reg, cfunc, param_names):
+                ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                self.reg = reg
+                self.cfunc = cfunc
+                self.found_in_virtual_call = False
+                self.found_in_normal_usage = False
+                self.param_map = {}
+                self.param_name = None
+
+
+                if self.reg.lower() in param_names:
+                    self.param_map[param_names[self.reg.lower()]] = self.reg.lower()
+                    self.param_name = param_names[self.reg.lower()]
+
+                logger.debug(f"Checking for parameter: {self.param_map},  target: {self.reg}")
+
+            def _check_var_name(self, lvar):
+                return hasattr(lvar, 'name') and lvar.name in self.param_map
+
+            def _check_expr_for_param(self, expr, context="", in_virtual_call=False):
+                """Recursively check expression for parameter usage"""
+                if not expr:
+                    return False
+
+                try:
+                    if expr.op == ida_hexrays.cot_var:
+                        lvar = self.cfunc.get_lvars()[expr.v.idx]
+                        if self._check_var_name(lvar):
+                            reg_name = self.param_map[lvar.name]
+                            if in_virtual_call:
+                                logger.debug(
+                                    f"Found parameter {lvar.name} ({reg_name}) in virtual call {context}"
+                                )
+                                self.found_in_virtual_call = True
+                            else:
+                                logger.debug(
+                                    f"Found parameter {lvar.name} ({reg_name}) in normal usage {context}"
+                                )
+                                # Check if the normal usage is within a virtual call context
+                                is_within = self.is_within_virtual_call_context(expr)
+                                if not is_within:
+                                    self.found_in_normal_usage = True
+                                
+                            return True
+
+                    # Check sub-expressions
+                    if hasattr(expr, "x") and expr.x:
+                        if self._check_expr_for_param(expr.x, context, in_virtual_call):
+                            return True
+                    if hasattr(expr, "y") and expr.y:
+                        if self._check_expr_for_param(expr.y, context, in_virtual_call):
+                            return True
+                    if hasattr(expr, "a") and expr.a:  # Check arguments of a call
+                        for i, arg in enumerate(expr.a):
+                            if arg:
+                                if self._check_expr_for_param(
+                                    arg, f"argument {i}", in_virtual_call
+                                ):
+                                    return True
+
+                except Exception as ex:
+                    logger.debug(f"Error in _check_expr_for_param: {str(ex)}")
+
+                return False
+
+            def is_within_virtual_call_context(self, expr):
+                """
+                Checks if the given expression is part of a virtual call context.
+                """
+                class ParentFinder(ida_hexrays.ctree_visitor_t):
+                        def __init__(self, target_expr):
+                            ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                            self.target_expr = target_expr
+                            self.parent = None
+
+                        def compare_expr(self, e1, e2):
+                            """Safely compare two expressions"""
+                            if e1 is None or e2 is None:
+                                return False
+                            try:
+                                # Compare basic properties
+                                return (e1.op == e2.op and
+                                        e1.ea == e2.ea and
+                                        (hasattr(e1, 'v') and hasattr(e2, 'v') and
+                                        e1.v.idx == e2.v.idx))
+                            except:
+                                return False
+                            
+                        def visit_expr(self, e):
+                            try:
+                                # Check if any of the operands is our target
+                                if hasattr(e, 'x') and self.compare_expr(e.x, self.target_expr):
+                                    self.parent = e
+                                    return 1
+                                if hasattr(e, 'y') and self.compare_expr(e.y, self.target_expr):
+                                    self.parent = e
+                                    return 1
+                                if hasattr(e, 'z') and self.compare_expr(e.z, self.target_expr):
+                                    self.parent = e
+                                    return 1
+                                # For function calls, check arguments
+                                if e.op == ida_hexrays.cot_call and hasattr(e, 'a'):
+                                    for arg in e.a:
+                                        if self.compare_expr(arg, self.target_expr):
+                                            self.parent = e
+                                            return 1
+                            except:
+                                pass
+                            return 0
+
+                parent_finder = ParentFinder(expr)
+                parent_finder.apply_to(self.cfunc.body, None)
+                parent = parent_finder.parent
+                
+                while parent:
+                    if parent.op == ida_hexrays.cot_call:
+                        if self._is_potential_vtable_access(parent.x):
+                            return True
+                    elif parent.op == ida_hexrays.cot_asg:
+                        # If it's an assignment, check the right-hand side
+                        if parent.x == expr:  # Ensure we are on the left side of assignment
+                            if hasattr(parent, 'y'):
+                                if self._check_expr_for_param(parent.y, "assignment RHS", True):
+                                    return True
+                    elif parent.op in [ida_hexrays.cot_memptr, ida_hexrays.cot_memref]:
+                        if self._is_potential_vtable_access(parent):
+                            return True
+
+                    parent_finder = ParentFinder(parent)
+                    parent_finder.apply_to(self.cfunc.body, None)
+                    parent = parent_finder.parent
+
+                return False
+
+            def _is_potential_vtable_access(self, expr):
+                """Check various vtable access patterns"""
+                if not expr:
+                    return False
+
+                try:
+                    # Pattern 1: Direct pointer dereference
+                    if expr.op == ida_hexrays.cot_ptr:
+                        return True
+
+                    # Pattern 2: Member pointer access
+                    if expr.op == ida_hexrays.cot_memptr:
+                        return True
+
+                    # Pattern 3: Addition operation (possible vtable offset)
+                    if expr.op == ida_hexrays.cot_add:
+                        if hasattr(expr, 'x') and expr.x:
+                            if expr.x.op == ida_hexrays.cot_ptr:
+                                return True
+                            if self._check_expr_for_param(expr.x, "vtable base", True):
+                                return True
+
+                    # Pattern 4: Cast operations
+                    if expr.op == ida_hexrays.cot_cast:
+                        return self._is_potential_vtable_access(expr.x if hasattr(expr, 'x') else None)
+
+                except Exception as ex:
+                    logger.debug(f"Error in _is_potential_vtable_access: {str(ex)}")
+
+                return False
+
+            def visit_expr(self, e):
+                try:
+                    if e.op == ida_hexrays.cot_call:
+                        # Check if this is potentially a virtual call
+                        is_virtual = False
+                        if hasattr(e, 'x') and e.x:
+                            is_virtual = self._is_potential_vtable_access(e.x)
+                            if is_virtual:
+                                logger.debug("Found potential virtual call pattern")
+                                # Check the call expression itself
+                                self._check_expr_for_param(e.x, "call expression", True)
+
+                            # Check arguments
+                            if hasattr(e, 'a') and e.a:
+                                for i, arg in enumerate(e.a):
+                                    if not arg:
+                                        continue
+                                    self._check_expr_for_param(arg, f"argument {i}", is_virtual)
+
+                    # Check normal usage (non-call expressions)
+                    elif e.op in [ida_hexrays.cot_asg, ida_hexrays.cot_idx,
+                                ida_hexrays.cot_add, ida_hexrays.cot_sub,
+                                ida_hexrays.cot_mul,
+                                ida_hexrays.cot_sdiv, ida_hexrays.cot_udiv, # Possible division opcodes
+                                ida_hexrays.cot_eq, ida_hexrays.cot_ne,
+                                ida_hexrays.cot_slt, ida_hexrays.cot_ult, # Added cot_slt, cot_ult for signed/unsigned
+                                ida_hexrays.cot_sle, ida_hexrays.cot_ule, # Added cot_sle, cot_ule for signed/unsigned
+                                ida_hexrays.cot_sgt, ida_hexrays.cot_ugt, # Added cot_sgt, cot_ugt for signed/unsigned
+                                ida_hexrays.cot_sge, ida_hexrays.cot_uge, # Added cot_sge, cot_uge for signed/unsigned
+                                ida_hexrays.cot_land, ida_hexrays.cot_lor]:
+                        self._check_expr_for_param(e, "normal operation", False)
+
+                    # Also check member access expressions
+                    elif e.op in [ida_hexrays.cot_memptr, ida_hexrays.cot_memref]:
+                        if self._is_potential_vtable_access(e):
+                            self._check_expr_for_param(e.x, "member access", True)
+                        else:
+                            self._check_expr_for_param(e.x, "normal member access", False)
+
+                except Exception as ex:
+                    logger.debug(f"Error in visit_expr: {str(ex)}")
+
+                return 0
+
+        checker = VirtualCallChecker(reg, cfunc, param_names)
+        checker.apply_to(cfunc.body, None)
+
+        logger.debug(f"Parameter: {reg}")
+        logger.debug(f"Found in virtual calls: {checker.found_in_virtual_call}")
+        logger.debug(f"Found in normal usage: {checker.found_in_normal_usage}")
+
+        result = checker.found_in_virtual_call and not checker.found_in_normal_usage
+        logger.debug(f"Final virtual call check result for {reg}: {result}")
+
+        return result
+
+    def _determine_calling_convention(self, func_ea, reg_specs,stack_specs, cfunc,param_names):
+        """Determine the appropriate calling convention based on register specifications, stack specs and architecture"""
         logger = DebugLogger.get_instance()
         if not reg_specs:
             return ida_typeinf.CM_CC_CDECL
 
-        # Debug için tüm register bilgilerini yazdır
+        # Debug for all register information
         logger.debug(f"Analyzing function at {hex(func_ea)}")
         logger.debug(f"Register specifications: {reg_specs}")
         logger.debug(f"Architecture: {'x64' if self.is_64bit() else 'x86'}")
-
-        # Register kullanımını analiz et
+        logger.debug(f"Stack specifications: {stack_specs}")
+        
+        # Analyze register usage
         param_regs = []
         return_reg = None
         register_usage = {
@@ -839,12 +1600,14 @@ class CallingConventionFixer:
             'xmm0_used': False,
             'xmm1_used': False,
             'ebp_used' : False,
-            'esp_used' : False
+            'esp_used' : False,
         }
-
-        # İlk parametre takibi için
+        
+        # For first parameter tracking
         first_param = None
         param_count = 0
+        
+        virtual_call_registers = []
 
         for spec_type, reg in reg_specs:
             reg = reg.lower()
@@ -857,7 +1620,7 @@ class CallingConventionFixer:
                 
                 param_regs.append(reg)
                 
-                # Register kullanım durumlarını kaydet
+                # Save register usage status
                 if reg == 'ecx':
                     register_usage['ecx_used'] = True
                     logger.debug("Found ecx parameter")
@@ -869,44 +1632,54 @@ class CallingConventionFixer:
                     logger.debug(f"Found {reg} parameter")
                 elif reg in ["ebp","esp"]:
                     register_usage[f'{reg}_used'] = True
-                elif reg in ["eax","rax","edx","rdx","ebx","rbx"]:
-                    break
-                    
+                elif reg not in ['ecx','rcx','xmm0','xmm1','ebp','esp']:
+                    virtual_call_registers.append(reg)
             elif spec_type == 'return':
                 return_reg = reg
 
-        # x64 mimarisi kontrolü
+        # x64 architecture check
         if self.is_64bit():
             logger.debug("Processing x64 architecture rules")
             
             # Microsoft x64 calling convention (always fastcall)
-            # RCX, RDX, R8, R9 veya XMM0-XMM3 kullanımı
+            # RCX, RDX, R8, R9 or XMM0-XMM3 usage
             if (register_usage['rcx_used'] or 
                 register_usage['xmm0_used'] or 
                 first_param in ['rcx', 'xmm0']):
                 logger.debug(f"Function at {hex(func_ea)} marked as x64 fastcall")
                 return ida_typeinf.CM_CC_FASTCALL
                 
-        # x86 mimarisi kontrolü
+        # x86 architecture check
         else:
             logger.debug("Processing x86 architecture rules")
             
-            # Thiscall kontrolü (ECX parametresi)
+            # Thiscall check (ECX parameter)
             if register_usage['ecx_used']:
                 logger.debug(f"Function at {hex(func_ea)} marked as thiscall due to ecx parameter")
                 return ida_typeinf.CM_CC_THISCALL
             if register_usage['ebp_used'] or register_usage['esp_used']:
                 logger.debug(f"Function at {hex(func_ea)} marked as cdecl due to stack parameter")
                 return ida_typeinf.CM_CC_CDECL
-                
-            # x86 fastcall kontrolü
-            # İlk parametre ECX/XMM0 ise veya belirli register kombinasyonları
+            
+            # x86 fastcall check
+            # First parameter ECX/XMM0 or certain register combinations
             if (first_param in ['ecx', 'xmm0'] or 
                 register_usage['xmm0_used']):
                 logger.debug(f"Function at {hex(func_ea)} marked as x86 fastcall")
                 return ida_typeinf.CM_CC_FASTCALL
+            
+            # Virtual call check
+            # If ebx, edi, etc. registers are used and followed by stack parameters
 
-        # Varsayılan olarak cdecl döndür
+            if virtual_call_registers or stack_specs:
+                                              
+                for reg in virtual_call_registers:
+                        if self._is_register_used_in_virtual_call(cfunc,reg,param_names):
+                           logger.debug(f"Function at {hex(func_ea)} marked as cdecl due to register {reg} in virtual call and stack parameters.")
+                           return ida_typeinf.CM_CC_CDECL
+                        
+                    
+       
         logger.debug(f"Function at {hex(func_ea)} defaulting to usercall")
         return ida_typeinf.CM_CC_SPECIAL
 
@@ -914,98 +1687,95 @@ class CallingConventionFixer:
         """Get function type from both decompiler and IDA database"""
         # First try to get type from decompiler
         try:
-            ida_hexrays.mark_cfunc_dirty(func_ea,False)
+            ida_hexrays.mark_cfunc_dirty(func_ea, False)
             cfunc = ida_hexrays.decompile(func_ea)
             if cfunc:
-                return str(cfunc.type.dstr())
+                func_type = str(cfunc.type.dstr())
+                return func_type, cfunc  # Return both func_type and cfunc
         except:
             pass
 
         # If decompiler fails, try to get from IDA database
-        return idc.get_type(func_ea)
+        func_type = idc.get_type(func_ea)
+        return func_type, None  # Return func_type and None if decompiler fails
 
-    def parse_register_specs(self, func_type):
-        """Parse register specifications from function type string"""
+    #
+    def parse_register_specs(self, func_type, cfunc):
+        """Parse register specifications from function type string and cfunc arguments"""
         reg_specs = []
+        stack_specs = []
+        param_names = {}
         try:
-            if not func_type or '@<' not in func_type:
-                return None
+            if not cfunc:  # If cfunc is None, we can't use cfunc.arguments
+                if not func_type or '@<' not in func_type:
+                    return None, None, None
+            else:
+                # Parse parameters from cfunc.arguments
+                for j, arg in enumerate(cfunc.arguments):
+                    if not arg.name:
+                        continue
+                    if arg.is_stk_var():
+                        offset = cfunc.mba.stacksize - arg.location.stkoff()
+                        stack_specs.append((arg.name, f"0x{abs(offset):x}"))
+                    elif arg.is_reg_var():
+                        regnum = arg.get_reg1()
+                        register_name = idaapi.get_mreg_name(regnum, arg.width)
+                        reg_specs.append(('param', register_name))
+                        param_names[register_name.lower()] = arg.name
 
-            # Split into parts
-            parts = func_type.split('@<')
-
-            # Parse parameter names and their registers
-            param_names = {}
-            if '(' in func_type and ')' in func_type:
-                param_section = func_type.split('(')[1].split(')')[0]
-                params = param_section.split(',')
-                for param in params:
-                    param = param.strip()
-                    if '@<' in param:
-                        name, reg = param.split('@<')
-                        reg = reg.split('>')[0]
-                        param_names[reg] = name
-
-            # Check for return register in first part
-            return_reg = None
-            if len(parts) > 1:
-                return_part = parts[0]
-                if return_part.endswith('__userpurge') or return_part.endswith('__usercall'):
-                    return_reg = parts[1].split('>')[0]
-                    reg_specs.append(('return', return_reg))
-
-            # Find all parameter registers
-            for part in parts[1:]:
-                if '>' in part:
-                    reg = part.split('>')[0]
-                    # Eğer bu register param_names içinde varsa, bir parametre olarak kullanılıyor demektir
-                    if reg in param_names:
-                        reg_specs.append(('param', reg))
-
-            return reg_specs if reg_specs else None
+                if func_type and '@<' in func_type:
+                    parts = func_type.split('@<')
+                    # Check for return register in first part
+                    return_reg = None
+                    if len(parts) > 1:
+                        return_part = parts[0]
+                        if return_part.endswith('__userpurge') or return_part.endswith('__usercall'):
+                            return_reg = parts[1].split('>')[0]
+                            reg_specs.append(('return', return_reg))
+                return reg_specs if reg_specs else None, stack_specs if stack_specs else None, param_names if param_names else None
 
         except Exception as e:
             print(f"Error parsing register specs: {str(e)}")
-            return None
+            return None, None, None
 
     def is_imported_function(self, func_ea):
-        """Gelişmiş bir kontrolle, işlevin import edilmiş veya bir thunk/stub olup olmadığını belirler"""
+        """Check if the function is imported/thunk"""
 
-        # 1. Bayrakları al
+        # 1. Get flags
         flags = ida_bytes.get_flags(func_ea)
 
-        # İşlev ise devam et, değilse doğrudan False döndür
+        # If it's not a function, return False
         if not ida_bytes.is_func(flags):
             return False
 
         func = ida_funcs.get_func(func_ea)
         if func:
-            # 2. FUNC_THUNK veya FUNC_LIB bayrağını kontrol et
+            # 2. Check if it has FUNC_THUNK or FUNC_LIB flag
             if func.flags & (ida_funcs.FUNC_THUNK | ida_funcs.FUNC_LIB):
                 return True
 
-        # 5. İşlev ismini kontrol et
+        # 5. Check if the function name starts with one of the import prefixes
         func_name = idc.get_func_name(func_ea)
         import_prefixes = ['__imp_', 'j_', 'imp_', '_imp']
         if any(func_name.startswith(prefix) for prefix in import_prefixes):
             return True
 
-        # 6. Demangled isim kontrolü
+        # 6. Check if the demangled name starts with one of the import prefixes
         demangled_name = idc.demangle_name(func_name, idc.get_inf_attr(idc.INF_SHORT_DN))
         if demangled_name and any(demangled_name.startswith(prefix) for prefix in import_prefixes):
             return True
 
-        # Import değilse False döndür
+        # If it's not an import, return False
         return False
 
     def has_usercall_convention(self, func_ea):
         """Enhanced check for __usercall/__userpurge convention"""
         logger = DebugLogger.get_instance()
-        func_type = self.get_function_type(func_ea)
+        func_type, cfunc = self.get_function_type(func_ea)
         if func_type:
             # Check for __usercall or __userpurge keywords
             if ("__usercall" in func_type) or ("__userpurge" in func_type):
-                reg_specs = self.parse_register_specs(func_type)
+                reg_specs, stack_specs , param_names = self.parse_register_specs(func_type,cfunc)
                 if reg_specs:
                     logger.debug(f"Found register specifications for {hex(func_ea)}: {reg_specs}")
                     self.print_function_info(func_ea)
@@ -1013,7 +1783,7 @@ class CallingConventionFixer:
 
             # Check for register specifications in function type
             if '@<' in func_type:
-                reg_specs = self.parse_register_specs(func_type)
+                reg_specs, stack_specs , param_names = self.parse_register_specs(func_type,cfunc)
                 if reg_specs:
                     logger.debug(f"Found register specifications for {hex(func_ea)}: {reg_specs}")
                     return True
@@ -1052,7 +1822,7 @@ class CallingConventionFixer:
 
         try:
             # Get function type from decompiler first
-            func_type = self.get_function_type(func_ea)
+            func_type, cfunc = self.get_function_type(func_ea)
             if not func_type:
                 logger.debug(f"No type information available for function at {hex(func_ea)}")
                 return
@@ -1062,7 +1832,7 @@ class CallingConventionFixer:
 
             if self.has_usercall_convention(func_ea):
                 # Parse register specifications
-                reg_specs = self.parse_register_specs(func_type)
+                reg_specs, stack_specs, param_names = self.parse_register_specs(func_type, cfunc)
 
                 if not reg_specs:
                     logger.debug(f"No register specifications found for function at {hex(func_ea)}")
@@ -1070,12 +1840,12 @@ class CallingConventionFixer:
 
                 logger.debug(f"Found register specs: {reg_specs}")
 
-                # Eğer doğrudan dönüşüm yapılamadıysa calling convention belirle
-                new_cc = self._determine_calling_convention(func_ea, reg_specs)
+                # Determine calling convention if direct conversion is not possible
+                new_cc = self._determine_calling_convention(func_ea, reg_specs, stack_specs, cfunc, param_names)
                 logger.debug(f"Determined calling convention: {new_cc}")
 
                 # Try to decompile to get current function details
-                ida_hexrays.mark_cfunc_dirty(func_ea,False)
+                ida_hexrays.mark_cfunc_dirty(func_ea, False)
                 cfunc = ida_hexrays.decompile(func_ea)
                 if not cfunc:
                     logger.debug(f"Failed to decompile function at {hex(func_ea)}")
@@ -1099,10 +1869,11 @@ class CallingConventionFixer:
                             self._analyze_calls_and_update_signature(func_ea)
 
                         # Refresh view if in pseudocode window
-                        widget_name = f"Pseudocode-{idc.get_func_name(func_ea)}"
-                        vu = ida_hexrays.get_widget_vdui(ida_kernwin.find_widget(widget_name))
-                        if vu:
-                            vu.refresh_view(True)
+                        if config["auto_refresh_views"]:
+                            widget_name = f"Pseudocode-{idc.get_func_name(func_ea)}"
+                            vu = ida_hexrays.get_widget_vdui(ida_kernwin.find_widget(widget_name))
+                            if vu:
+                                vu.refresh_view(True)
                     else:
                         logger.debug(f"Failed to apply type at {hex(func_ea)}")
             else:
@@ -1137,65 +1908,122 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
         return idaapi.AST_ENABLE_ALWAYS
 
     def get_calls_in_function(self, func_ea):
+        """
+        Finds calls in a function using either the decompiler or IDA API.
+        """
+        logger = DebugLogger.get_instance()
         calls = []
-        func = ida_funcs.get_func(func_ea)
-        if not func:
+        config_path = os.path.join(ida_diskio.get_user_idadir(), "retrospective_config.json")
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except Exception as e:
+            logger.debug(f"Config file not found {config_path}: {e}")
             return calls
 
-        # Her fonksiyondaki çağrıları sıralı şekilde al
-        func_items = list(idautils.FuncItems(func_ea))
-        for ea in reversed(func_items):  # Tersten dolaş
-            if idaapi.is_call_insn(ea):
-                call_target = idc.get_operand_value(ea, 0)
-                if ida_funcs.get_func(call_target):
-                    calls.append(call_target)
-        return calls
+        search_engine = config.get("search_engine", "IDA-API")
+
+        try:
+            if search_engine == "Hex-Rays":
+                # Decompile the function
+                ida_hexrays.mark_cfunc_dirty(func_ea, False)
+                cfunc = ida_hexrays.decompile(func_ea)
+                if not cfunc:
+                    logger.debug(f"Failed to decompile function at {hex(func_ea)}.")
+                    return calls
+
+                class CallVisitor(ida_hexrays.ctree_visitor_t):
+                    def __init__(self, calls):
+                        ida_hexrays.ctree_visitor_t.__init__(self, ida_hexrays.CV_FAST)
+                        self.calls = calls
+
+                    def visit_expr(self, expr):
+                        if expr.op == ida_hexrays.cot_call:
+                            try:
+                                if expr.x.op != ida_hexrays.cot_obj:
+                                    return 0
+                                if expr.x.obj_ea == idaapi.BADADDR:
+                                    return 0
+                                target_ea = expr.x.obj_ea
+                                if target_ea not in self.calls and ida_funcs.get_func(target_ea):
+                                    self.calls.append(target_ea)
+                            except Exception as e:
+                                logger.debug(f"Error during visit_expr: {str(e)}")
+                        return 0
+
+                visitor = CallVisitor(calls)
+                visitor.apply_to(cfunc.body, None)
+                return calls
+
+            elif search_engine == "IDA-API":
+                func = ida_funcs.get_func(func_ea)
+                if not func:
+                    return calls
+
+                # Iterate over each instruction in the function
+                func_items = list(idautils.FuncItems(func_ea))
+                for ea in reversed(func_items):
+                    if idaapi.is_call_insn(ea) or idc.print_insn_mnem(ea) == "jmp":
+                        call_target = idc.get_operand_value(ea, 0)
+                        # Add the call target if it has not been added before and is a valid function
+                        if call_target not in calls and ida_funcs.get_func(call_target):
+                            calls.append(call_target)
+                return calls
+
+            else:
+                logger.debug(f"Invalid search engine selected: {search_engine}")
+                return calls
+        except Exception as e:
+            logger.debug(f"Error getting calls in function at {hex(func_ea)}: {str(e)}")
+            return calls
+
     
     def collect_layered_call_chain(self, func_ea, max_layers, current_layer=1, visited=None, call_chain=None):
-        """Katmanlı çağrı zinciri toplama
+        """Collects a layered call chain
         
         Args:
-            func_ea: Başlangıç fonksiyonunun adresi
-            max_layers: Maksimum katman sayısı (default: 2)
-            current_layer: Mevcut katman sayısı
-            visited: Ziyaret edilen fonksiyonların seti
-            call_chain: Toplanan çağrı zinciri
+            func_ea: Starting function address
+            max_layers: Maximum layer count (default: 2)
+            current_layer: Current layer count
+            visited: Set of visited functions
+            call_chain: Collected call chain
         """
+        logger = DebugLogger.get_instance()
         if visited is None:
             visited = set()
         if call_chain is None:
             call_chain = []
             
-        # Eğer fonksiyon zaten ziyaret edildiyse veya maksimum katmana ulaşıldıysa dur
+        # If the function has already been visited or the maximum layer count has been reached, stop
         if func_ea in visited or current_layer > max_layers:
             return call_chain
 
         visited.add(func_ea)
         
-        # Mevcut katmandaki çağrıları topla
+        # Collect calls in the current layer
         current_layer_calls = []
         func = ida_funcs.get_func(func_ea)
         if func:
-            for ea in idautils.FuncItems(func_ea):
-                if idaapi.is_call_insn(ea):
-                    target = idc.get_operand_value(ea, 0)
-                    if ida_funcs.get_func(target):
-                        current_layer_calls.append({
-                            'caller_ea': func_ea,
-                            'call_ea': ea,
-                            'target_ea': target,
-                            'layer': current_layer,
-                            'processed': False
-                        })
+                
+                calls = self.get_calls_in_function(func_ea)
+                for target in calls:
+                    
+                    current_layer_calls.append({
+                                'caller_ea': func_ea,
+                                'call_ea': target,
+                                'target_ea': target,
+                                'layer': current_layer,
+                                'processed': False
+                            })
         
-        # Mevcut katmandaki çağrıları tersine çevir
+        # Reverse the calls in the current layer
         current_layer_calls.reverse()
         
-        # Mevcut katmandaki çağrıları zincire ekle
+        # Add the calls in the current layer to the chain
         for call in current_layer_calls:
             call_chain.append(call)
             
-            # Bir sonraki katmana geç
+            # Move to the next layer
             if current_layer < max_layers:
                 self.collect_layered_call_chain(
                     call['target_ea'],
@@ -1205,7 +2033,7 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                     call_chain
                 )
         
-        # İlk fonksiyonu da zincire ekle (sadece ilk katman için)
+        # Add the starting function to the chain (only for the first layer)
         if current_layer == 1:
             call_chain.append({
                 'caller_ea': func_ea,
@@ -1238,7 +2066,9 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                         "show_debug": False,
                         "param_analysis": True,
                         "func_type_analysis": True,
-                        "unused_param_analysis": True
+                        "unused_param_analysis": True,
+                        "virtual_call_analysis" : True,
+                        "search_engine" : "IDA-API"
                     }
 
                 logger.debug(f"Starting backwards analysis from {hex(start_ea)}")
@@ -1291,15 +2121,13 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                             logger.debug(f"  From: {hex(caller_ea)}")
                             logger.debug(f"  To: {hex(target_ea)}")
                             
-                            # Parameter analysis kontrolü
                             fixer.fix_calling_convention(target_ea)
                             if config["param_analysis"]:
                                 fixer._analyze_and_remove_unused_parameters(target_ea)
                             else:
                                 if config["func_type_analysis"]:
-                                    fixer.fix_calling_convention(target_ea)
-                            
-                            # View refresh kontrolü
+                                 fixer.fix_calling_convention(target_ea)
+                                    
                             if config["auto_refresh_views"]:
                                 func_name = idc.get_func_name(target_ea)
                                 vu = ida_hexrays.get_widget_vdui(ida_kernwin.find_widget(f"Pseudocode-{func_name}"))
@@ -1313,7 +2141,62 @@ class BackwardsDecompilerHandler(idaapi.action_handler_t):
                         if progress.check_cancelled():
                             print(f"\nOperation cancelled by user during function processing.")
                             return
-
+                
+                # Phase 3: Virtual Call Type Analysis
+                progress.replace_message("Phase 3: Analyzing virtual call types... (Press Esc to cancel)")
+                logger.debug("\nPhase 3: Analyzing virtual call types...")
+                
+                if progress.check_cancelled():
+                    print(f"\nOperation cancelled by user during virtual call analysis.")
+                    return
+                
+                for current_layer in range(max_layer, 0, -1):
+                    progress.replace_message(f"Processing Layer {current_layer} for virtual calls of {max_layer}... (Press Esc to cancel)")
+                    logger.debug(f"\nProcessing Layer {current_layer}:")
+                    
+                    if progress.check_cancelled():
+                        print(f"\nOperation cancelled by user at layer {current_layer}.")
+                        return
+                    
+                    layer_calls = [call for call in call_chain if call['layer'] == current_layer]
+                    for i, call in enumerate(layer_calls, 1):
+                            try:
+                                target_ea = call['target_ea']
+                                caller_ea = call['caller_ea']
+                                call_ea = call['call_ea']
+                                
+                                progress.replace_message(
+                                    f"Layer {current_layer}/{max_layer}: Processing virtual calls for function {i}/{len(layer_calls)} at {hex(target_ea)}... "
+                                    "(Press Esc to cancel)"
+                                )
+                            
+                                if progress.check_cancelled():
+                                    print(f"\nOperation cancelled by user while processing virtual call types at {hex(target_ea)}.")
+                                    return
+                                
+                                logger.debug(f"\nAnalyzing virtual calls at {hex(call_ea)}:")
+                                logger.debug(f"  From: {hex(caller_ea)}")
+                                logger.debug(f"  To: {hex(target_ea)}")
+                                
+                                if config["virtual_call_analysis"]:
+                                   fixer._analyze_virtual_calls_and_update_signature(target_ea)
+                                else:
+                                    logger.debug(f"Skipping virtual call analysis for {hex(target_ea)}")
+                            
+                                if config["auto_refresh_views"]:
+                                   func_name = idc.get_func_name(target_ea)
+                                   vu = ida_hexrays.get_widget_vdui(ida_kernwin.find_widget(f"Pseudocode-{func_name}"))
+                                   if vu:
+                                       vu.refresh_view(True)
+                                       
+                            except Exception as e:
+                                logger.debug(f"Error processing virtual calls at {hex(target_ea)}: {str(e)}")
+                                continue
+                                
+                            if progress.check_cancelled():
+                                    print(f"\nOperation cancelled by user during virtual calls processing.")
+                                    return
+                
                 progress.replace_message("Analysis completed successfully!")
                 print("\nAnalysis completed successfully!")
                 
